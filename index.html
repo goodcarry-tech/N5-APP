@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>N5 日文隨機造句產生器 (語音朗讀版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        select, option { font-size: 1rem; padding: 0.5rem; }
+    </style>
+</head>
+<body class="bg-slate-100 p-4 md:p-8 font-sans text-slate-800">
+    <div class="max-w-5xl mx-auto bg-white p-6 rounded-xl shadow-md">
+        <h1 class="text-2xl font-bold mb-4 text-indigo-700">N5 綜合文法隨機造句產生器 (語音聽寫版)</h1>
+        <p class="text-gray-600 mb-6 text-sm">內建 20 組擴充素材與 Web Speech API，支援一鍵生成、複製與日文自動朗讀。</p>
+        
+        <div class="mb-6">
+            <label class="block text-sm font-semibold mb-2 text-gray-700">選擇要練習的 N5 文法句型：</label>
+            <select id="grammarPattern" class="w-full border border-indigo-300 p-3 rounded focus:ring-2 focus:ring-indigo-500 outline-none bg-indigo-50">
+                <optgroup label="【指定圖解句型】">
+                    <option value="1">1. 複合身分：N1 は [國家]人で、[職業] です。</option>
+                    <option value="2">2. 介紹他人：ごしょうかいします。こちらは N1さんです。N1さんは...</option>
+                    <option value="3">3. 附和同感：N1 は [職業] です。N2 も [職業] です / おなじです。</option>
+                </optgroup>
+                <optgroup label="【N5 核心：存在與移動】">
+                    <option value="4">4. 存在 (無生命)：[場所] に [物品] が あります。</option>
+                    <option value="5">5. 存在 (有生命)：[場所] に [人物] が います。</option>
+                    <option value="6">6. 移動動詞：[人物] は [場所] へ 行きます。</option>
+                </optgroup>
+                <optgroup label="【N5 核心：動作與變化】">
+                    <option value="7">7. 動作發生地：[人物] は [場所] で [物品] を [動作-ます]。</option>
+                    <option value="8">8. 否定式：[人物] は [物品] を [動作-ません]。</option>
+                    <option value="9">9. 過去式：[人物] は [場所] で [物品] を [動作-ました]。</option>
+                    <option value="10">10. 請求 (て形)：[物品] を [動作-て] ください。</option>
+                    <option value="11">11. 進行狀態 (て形)：[人物] は 今、[物品] を [動作-て] います。</option>
+                    <option value="12">12. 願望 (たい)：[人物] は [物品] を [動作-たい] です。</option>
+                </optgroup>
+                <optgroup label="【N5 核心：描述與原因】">
+                    <option value="13">13. 喜好：[人物] は [物品] が 好きです。</option>
+                    <option value="14">14. 原因：今日は [天氣] ですから、[心情] です。</option>
+                    <option value="15">15. 勸誘：いっしょに [場所] で [物品] を [動作-ませんか]。</option>
+                </optgroup>
+            </select>
+        </div>
+
+        <div class="flex flex-wrap gap-4 mb-6 items-center bg-gray-50 p-4 rounded-lg border border-gray-200">
+            <button onclick="generateSentences()" class="bg-indigo-600 text-white px-5 py-2 rounded shadow hover:bg-indigo-700 transition font-bold">
+                🎲 生成 10 句
+            </button>
+            <button onclick="copyText()" class="bg-teal-500 text-white px-5 py-2 rounded shadow hover:bg-teal-600 transition font-bold">
+                📋 複製文字
+            </button>
+            
+            <div class="h-8 w-px bg-gray-300 mx-2"></div> <!-- 分隔線 -->
+            
+            <button onclick="readAloud()" class="bg-rose-500 text-white px-5 py-2 rounded shadow hover:bg-rose-600 transition font-bold flex items-center">
+                🔊 朗讀日文
+            </button>
+            <button onclick="stopSpeech()" class="bg-gray-400 text-white px-4 py-2 rounded shadow hover:bg-gray-500 transition font-bold">
+                ⏹️ 停止
+            </button>
+            
+            <div class="ml-2 flex items-center gap-2">
+                <label class="text-sm font-semibold text-gray-600">語速:</label>
+                <select id="speechRate" class="border border-gray-300 rounded p-1 text-sm outline-none">
+                    <option value="1.0">正常 (1.0x)</option>
+                    <option value="0.7" selected>慢速聽寫 (0.7x)</option>
+                    <option value="0.5">極慢 (0.5x)</option>
+                </select>
+            </div>
+        </div>
+
+        <textarea id="outputText" class="w-full h-96 border border-gray-300 p-4 rounded bg-white text-gray-800 outline-none focus:ring-2 focus:ring-indigo-300 leading-relaxed font-mono text-sm shadow-inner" readonly placeholder="生成的句子會顯示在這裡..."></textarea>
+    </div>
+
+    <script>
+        // 用來暫存當前生成的 10 句日文，供語音 API 讀取
+        let currentJapaneseSentences = [];
+
+        // 全面擴充至 20 組的素材庫
+        const dict = {
+            characters: [
+                { ja: 'ジョン', romaji: 'Jon', zh: '約翰' }, { ja: 'ディアナ', romaji: 'Diana', zh: '黛安娜' },
+                { ja: 'ロアン', romaji: 'Roan', zh: '洛安' }, { ja: 'キャリー', romaji: 'Kyarii', zh: '凱莉' },
+                { ja: 'アン', romaji: 'An', zh: '安' }, { ja: 'ルーシー', romaji: 'Ruushii', zh: '露西' },
+                { ja: 'たなか', romaji: 'Tanaka', zh: '田中' }, { ja: 'さとう', romaji: 'Satou', zh: '佐藤' },
+                { ja: 'すずき', romaji: 'Suzuki', zh: '鈴木' }, { ja: 'たかはし', romaji: 'Takahashi', zh: '高橋' },
+                { ja: 'わたなべ', romaji: 'Watanabe', zh: '渡邊' }, { ja: 'いとう', romaji: 'Itou', zh: '伊藤' },
+                { ja: 'やまもと', romaji: 'Yamamoto', zh: '山本' }, { ja: 'なかむら', romaji: 'Nakamura', zh: '中村' },
+                { ja: 'こばやし', romaji: 'Kobayashi', zh: '小林' }, { ja: 'かとう', romaji: 'Katou', zh: '加藤' },
+                { ja: 'よしだ', romaji: 'Yoshida', zh: '吉田' }, { ja: 'やまだ', romaji: 'Yamada', zh: '山田' },
+                { ja: 'ささき', romaji: 'Sasaki', zh: '佐佐木' }, { ja: 'きむら', romaji: 'Kimura', zh: '木村' }
+            ],
+            countries: [
+                { ja: 'アメリカ', romaji: 'Amerika', zh: '美國' }, { ja: 'ベトナム', romaji: 'Betonamu', zh: '越南' },
+                { ja: 'にほん', romaji: 'Nihon', zh: '日本' }, { ja: 'ちゅうごく', romaji: 'Chuugoku', zh: '中國' },
+                { ja: 'たいわん', romaji: 'Taiwan', zh: '台灣' }, { ja: 'かんこく', romaji: 'Kankoku', zh: '韓國' },
+                { ja: 'イギリス', romaji: 'Igirisu', zh: '英國' }, { ja: 'フランス', romaji: 'Furansu', zh: '法國' },
+                { ja: 'ドイツ', romaji: 'Doitsu', zh: '德國' }, { ja: 'イタリア', romaji: 'Itaria', zh: '義大利' },
+                { ja: 'スペイン', romaji: 'Supein', zh: '西班牙' }, { ja: 'インド', romaji: 'Indo', zh: '印度' },
+                { ja: 'タイ', romaji: 'Tai', zh: '泰國' }, { ja: 'マレーシア', romaji: 'Mareeshia', zh: '馬來西亞' },
+                { ja: 'シンガポール', romaji: 'Shingapo-ru', zh: '新加坡' }, { ja: 'フィリピン', romaji: 'Firipin', zh: '菲律賓' },
+                { ja: 'カナダ', romaji: 'Kanada', zh: '加拿大' }, { ja: 'ブラジル', romaji: 'Burajiru', zh: '巴西' },
+                { ja: 'オーストラリア', romaji: 'O-sutoraria', zh: '澳洲' }, { ja: 'ロシア', romaji: 'Roshia', zh: '俄羅斯' }
+            ],
+            professions: [
+                { ja: 'きょうし', romaji: 'kyoushi', zh: '老師' }, { ja: 'かんごし', romaji: 'kangoshi', zh: '護士' },
+                { ja: 'いしゃ', romaji: 'isha', zh: '醫生' }, { ja: 'エンジニア', romaji: 'enjinia', zh: '工程師' },
+                { ja: 'かいごの じっしゅうせい', romaji: 'kaigo no jisshuusei', zh: '看護實習生' }, { ja: 'のうぎょうの じっしゅうせい', romaji: 'nougyou no jisshuusei', zh: '農業實習生' },
+                { ja: 'しょくひんの じっしゅうせい', romaji: 'shokuhin no jisshuusei', zh: '食品實習生' }, { ja: 'あしばの じっしゅうせい', romaji: 'ashiba no jisshuusei', zh: '鷹架實習生' },
+                { ja: 'かいしゃいん', romaji: 'kaishain', zh: '公司職員' }, { ja: 'がくせい', romaji: 'gakusei', zh: '學生' },
+                { ja: 'ぎんこういん', romaji: 'ginkouin', zh: '銀行員' }, { ja: 'てんいん', romaji: 'tenin', zh: '店員' },
+                { ja: 'しゅふ', romaji: 'shufu', zh: '主婦' }, { ja: 'けんきゅうしゃ', romaji: 'kenkyuusha', zh: '研究者' },
+                { ja: 'けいさつかん', romaji: 'keisatsukan', zh: '警察' }, { ja: 'かしゅ', romaji: 'kashu', zh: '歌手' },
+                { ja: 'はいゆう', romaji: 'haiyuu', zh: '演員' }, { ja: 'さっか', romaji: 'sakka', zh: '作家' },
+                { ja: 'せいじか', romaji: 'seijika', zh: '政治家' }, { ja: 'がか', romaji: 'gaka', zh: '畫家' }
+            ],
+            locations: [
+                { ja: 'がっこう', romaji: 'gakkou', zh: '學校' }, { ja: 'びょういん', romaji: 'byouin', zh: '醫院' },
+                { ja: 'かいしゃ', romaji: 'kaisha', zh: '公司' }, { ja: 'ぎんこう', romaji: 'ginkou', zh: '銀行' },
+                { ja: 'えき', romaji: 'eki', zh: '車站' }, { ja: 'レストラン', romaji: 'resutoran', zh: '餐廳' },
+                { ja: 'スーパー', romaji: 'su-pa-', zh: '超市' }, { ja: 'こうえん', romaji: 'kouen', zh: '公園' },
+                { ja: 'としょかん', romaji: 'toshokan', zh: '圖書館' }, { ja: 'ゆうびんきょく', romaji: 'yuubinkyoku', zh: '郵局' },
+                { ja: 'びじゅつかん', romaji: 'bijutsukan', zh: '美術館' }, { ja: 'えいがかん', romaji: 'eigakan', zh: '電影院' },
+                { ja: 'ほんや', romaji: 'honya', zh: '書店' }, { ja: 'パンや', romaji: 'panya', zh: '麵包店' },
+                { ja: 'くうこう', romaji: 'kuukou', zh: '機場' }, { ja: 'うみ', romaji: 'umi', zh: '海邊' },
+                { ja: 'やま', romaji: 'yama', zh: '山上' }, { ja: 'うち', romaji: 'uchi', zh: '家' },
+                { ja: 'まち', romaji: 'machi', zh: '城鎮' }, { ja: 'デパート', romaji: 'depa-to', zh: '百貨公司' }
+            ],
+            actions: [
+                { stem: 'よみ', te: 'よんで', r_stem: 'yomi', r_te: 'yonde', zh: '讀' },
+                { stem: 'かき', te: 'かいて', r_stem: 'kaki', r_te: 'kaite', zh: '寫' },
+                { stem: 'み', te: 'みて', r_stem: 'mi', r_te: 'mite', zh: '看' },
+                { stem: 'きき', te: 'きいて', r_stem: 'kiki', r_te: 'kiite', zh: '聽' },
+                { stem: 'かい', te: 'かって', r_stem: 'kai', r_te: 'katte', zh: '買' },
+                { stem: 'とり', te: 'とって', r_stem: 'tori', r_te: 'totte', zh: '拍/拿' },
+                { stem: 'たべ', te: 'たべて', r_stem: 'tabe', r_te: 'tabete', zh: '吃' },
+                { stem: 'のみ', te: 'のんで', r_stem: 'nomi', r_te: 'nonde', zh: '喝' },
+                { stem: 'つくり', te: 'つくって', r_stem: 'tsukuri', r_te: 'tsukutte', zh: '製作' },
+                { stem: 'まち', te: 'まって', r_stem: 'machi', r_te: 'matte', zh: '等待' },
+                { stem: 'あらい', te: 'あらって', r_stem: 'arai', r_te: 'aratte', zh: '洗' },
+                { stem: 'あけ', te: 'あけて', r_stem: 'ake', r_te: 'akete', zh: '打開' },
+                { stem: 'しめ', te: 'しめて', r_stem: 'shime', r_te: 'shimete', zh: '關閉' },
+                { stem: 'べんきょうし', te: 'べんきょうして', r_stem: 'benkyoushi', r_te: 'benkyoushite', zh: '學習' },
+                { stem: 'うたい', te: 'うたって', r_stem: 'utai', r_te: 'utatte', zh: '唱' },
+                { stem: 'かり', te: 'かりて', r_stem: 'kari', r_te: 'karite', zh: '借入' },
+                { stem: 'かえし', te: 'かえして', r_stem: 'kaeshi', r_te: 'kaeshite', zh: '歸還' },
+                { stem: 'おしえ', te: 'おしえて', r_stem: 'oshie', r_te: 'oshiete', zh: '教' },
+                { stem: 'おぼえ', te: 'おぼえて', r_stem: 'oboe', r_te: 'oboete', zh: '記住' },
+                { stem: 'さがし', te: 'さがして', r_stem: 'sagashi', r_te: 'sagashite', zh: '尋找' }
+            ],
+            objects: [
+                { ja: 'ほん', romaji: 'hon', zh: '書' }, { ja: 'ざっし', romaji: 'zasshi', zh: '雜誌' },
+                { ja: 'しんぶん', romaji: 'shinbun', zh: '報紙' }, { ja: 'パソコン', romaji: 'pasokon', zh: '電腦' },
+                { ja: 'けいたい', romaji: 'keitai', zh: '手機' }, { ja: 'コーヒー', romaji: 'ko-hi-', zh: '咖啡' },
+                { ja: 'みず', romaji: 'mizu', zh: '水' }, { ja: 'おちゃ', romaji: 'ocha', zh: '茶' },
+                { ja: 'てがみ', romaji: 'tegami', zh: '信' }, { ja: 'しゃしん', romaji: 'shashin', zh: '照片' },
+                { ja: 'えいが', romaji: 'eiga', zh: '電影' }, { ja: 'おんがく', romaji: 'ongaku', zh: '音樂' },
+                { ja: 'くるま', romaji: 'kuruma', zh: '車' }, { ja: 'じてんしゃ', romaji: 'jitensha', zh: '腳踏車' },
+                { ja: 'かばん', romaji: 'kaban', zh: '包包' }, { ja: 'さいふ', romaji: 'saifu', zh: '錢包' },
+                { ja: 'くつ', romaji: 'kutsu', zh: '鞋子' }, { ja: 'ふく', romaji: 'fuku', zh: '衣服' },
+                { ja: 'ぎゅうにゅう', romaji: 'gyuunyuu', zh: '牛奶' }, { ja: 'パン', romaji: 'pan', zh: '麵包' }
+            ],
+            weather: [
+                { ja: 'はれ', romaji: 'hare', zh: '晴天' }, { ja: 'あめ', romaji: 'ame', zh: '雨天' },
+                { ja: 'くもり', romaji: 'kumori', zh: '陰天' }, { ja: 'いいてんき', romaji: 'iitenki', zh: '好天氣' },
+                { ja: 'わるいてんき', romaji: 'waruitenki', zh: '壞天氣' }, { ja: 'ゆき', romaji: 'yuki', zh: '下雪' },
+                { ja: 'たいふう', romaji: 'taifuu', zh: '颱風' }, { ja: 'おおあめ', romaji: 'ooame', zh: '大雨' },
+                { ja: 'きょうふう', romaji: 'kyoufuu', zh: '強風' }, { ja: 'かみなり', romaji: 'kaminari', zh: '打雷' },
+                { ja: 'あつい ひ', romaji: 'atsui hi', zh: '熱天' }, { ja: 'さむい ひ', romaji: 'samui hi', zh: '冷天' },
+                { ja: 'すずしい ひ', romaji: 'suzushii hi', zh: '涼爽的天氣' }, { ja: 'あたたかい ひ', romaji: 'atatakai hi', zh: '溫暖的天氣' },
+                { ja: 'むしあつい ひ', romaji: 'mushiatsui hi', zh: '悶熱的天氣' }, { ja: 'おおゆき', romaji: 'ooyuki', zh: '大雪' },
+                { ja: 'こさめ', romaji: 'kosame', zh: '小雨' }, { ja: 'にわかあめ', romaji: 'niwakaame', zh: '陣雨' },
+                { ja: 'はれ のち あめ', romaji: 'hare nochi ame', zh: '晴轉雨' }, { ja: 'ゆき のち はれ', romaji: 'yuki nochi hare', zh: '雪轉晴' }
+            ],
+            moods: [
+                { ja: 'うれしい', romaji: 'ureshii', zh: '開心' }, { ja: 'たのしい', romaji: 'tanoshii', zh: '愉快' },
+                { ja: 'さびしい', romaji: 'sabishii', zh: '寂寞' }, { ja: 'いそがしい', romaji: 'isogashii', zh: '忙碌' },
+                { ja: 'げんき', romaji: 'genki', zh: '有精神' }, { ja: 'ひま', romaji: 'hima', zh: '空閒' },
+                { ja: 'かなしい', romaji: 'kanashii', zh: '悲傷' }, { ja: 'ねむい', romaji: 'nemui', zh: '想睡' },
+                { ja: 'つまらない', romaji: 'tsumaranai', zh: '無聊' }, { ja: 'おもしろい', romaji: 'omoshiroi', zh: '覺得有趣' },
+                { ja: 'さむい', romaji: 'samui', zh: '覺得冷' }, { ja: 'あつい', romaji: 'atsui', zh: '覺得熱' },
+                { ja: 'いたい', romaji: 'itai', zh: '痛' }, { ja: 'きぶんがいい', romaji: 'kibun ga ii', zh: '心情好' },
+                { ja: 'きぶんがわるい', romaji: 'kibun ga warui', zh: '心情差' }, { ja: 'しんぱい', romaji: 'shinpai', zh: '擔心' },
+                { ja: 'たいへん', romaji: 'taihen', zh: '辛苦' }, { ja: 'しあわせ', romaji: 'shiawase', zh: '幸福' },
+                { ja: 'あんしん', romaji: 'anshin', zh: '安心' }, { ja: 'ざんねん', romaji: 'zannen', zh: '遺憾' }
+            ]
+        };
+
+        function getRandom(arr) {
+            return arr[Math.floor(Math.random() * arr.length)];
+        }
+
+        function getTwoDistinctChars() {
+            let c1 = getRandom(dict.characters);
+            let c2 = getRandom(dict.characters);
+            while (c1.ja === c2.ja) { c2 = getRandom(dict.characters); }
+            return [c1, c2];
+        }
+
+        function generateSentences() {
+            const pattern = document.getElementById('grammarPattern').value;
+            let output = "";
+            currentJapaneseSentences = []; // 重置語音列表
+
+            for (let i = 1; i <= 10; i++) {
+                let char = getRandom(dict.characters);
+                let country = getRandom(dict.countries);
+                let loc = getRandom(dict.locations);
+                let obj = getRandom(dict.objects);
+                let act = getRandom(dict.actions);
+                let prof = getRandom(dict.professions);
+                let wea = getRandom(dict.weather);
+                let mood = getRandom(dict.moods);
+
+                let ja = "", romaji = "", zh = "";
+
+                switch(pattern) {
+                    case "1":
+                        ja = `${char.ja}さんは ${country.ja}じんで、${prof.ja}です。`;
+                        romaji = `${char.romaji}-san wa ${country.romaji}-jin de, ${prof.romaji} desu.`;
+                        zh = `${char.zh}是${country.zh}人，也是${prof.zh}。`;
+                        break;
+                    case "2":
+                        ja = `ごしょうかいします。こちらは ${char.ja}さんです。${char.ja}さんは ${country.ja}のかたで、${prof.ja}です。`;
+                        romaji = `Goshoukai shimasu. Kochira wa ${char.romaji}-san desu. ${char.romaji}-san wa ${country.romaji} no kata de, ${prof.romaji} desu.`;
+                        zh = `為您介紹一下。這位是${char.zh}。${char.zh}是${country.zh}人，也是${prof.zh}。`;
+                        break;
+                    case "3":
+                        let chars = getTwoDistinctChars();
+                        if (Math.random() > 0.5) {
+                            ja = `${chars[0].ja}さんは ${prof.ja}です。${chars[1].ja}さんも ${prof.ja}です。`;
+                            romaji = `${chars[0].romaji}-san wa ${prof.romaji} desu. ${chars[1].romaji}-san mo ${prof.romaji} desu.`;
+                            zh = `${chars[0].zh}是${prof.zh}。${chars[1].zh}也是${prof.zh}。`;
+                        } else {
+                            ja = `${chars[0].ja}さんは ${prof.ja}です。${chars[1].ja}さんも おなじです。`;
+                            romaji = `${chars[0].romaji}-san wa ${prof.romaji} desu. ${chars[1].romaji}-san mo onaji desu.`;
+                            zh = `${chars[0].zh}是${prof.zh}。${chars[1].zh}也一樣(是${prof.zh})。`;
+                        }
+                        break;
+                    case "4":
+                        ja = `${loc.ja}に ${obj.ja}が あります。`;
+                        romaji = `${loc.romaji} ni ${obj.romaji} ga arimasu.`;
+                        zh = `在${loc.zh}有${obj.zh}。`;
+                        break;
+                    case "5":
+                        ja = `${loc.ja}に ${char.ja}さんが います。`;
+                        romaji = `${loc.romaji} ni ${char.romaji}-san ga imasu.`;
+                        zh = `${char.zh}在${loc.zh}。`;
+                        break;
+                    case "6":
+                        ja = `${char.ja}さんは ${loc.ja}へ 行きます。`;
+                        romaji = `${char.romaji}-san wa ${loc.romaji} e ikimasu.`;
+                        zh = `${char.zh}要去${loc.zh}。`;
+                        break;
+                    case "7":
+                        ja = `${char.ja}さんは ${loc.ja}で ${obj.ja}を ${act.stem}ます。`;
+                        romaji = `${char.romaji}-san wa ${loc.romaji} de ${obj.romaji} o ${act.r_stem}masu.`;
+                        zh = `${char.zh}在${loc.zh}${act.zh}${obj.zh}。`;
+                        break;
+                    case "8":
+                        ja = `${char.ja}さんは ${obj.ja}を ${act.stem}ません。`;
+                        romaji = `${char.romaji}-san wa ${obj.romaji} o ${act.r_stem}masen.`;
+                        zh = `${char.zh}不${act.zh}${obj.zh}。`;
+                        break;
+                    case "9":
+                        ja = `${char.ja}さんは ${loc.ja}で ${obj.ja}を ${act.stem}ました。`;
+                        romaji = `${char.romaji}-san wa ${loc.romaji} de ${obj.romaji} o ${act.r_stem}mashita.`;
+                        zh = `${char.zh}在${loc.zh}${act.zh}了${obj.zh}。`;
+                        break;
+                    case "10":
+                        ja = `すみません、${obj.ja}を ${act.te}ください。`;
+                        romaji = `Sumimasen, ${obj.romaji} o ${act.r_te} kudasai.`;
+                        zh = `不好意思，請${act.zh}${obj.zh}。`;
+                        break;
+                    case "11":
+                        ja = `${char.ja}さんは 今、${obj.ja}を ${act.te}います。`;
+                        romaji = `${char.romaji}-san wa ima, ${obj.romaji} o ${act.r_te} imasu.`;
+                        zh = `${char.zh}現在正在${act.zh}${obj.zh}。`;
+                        break;
+                    case "12":
+                        ja = `${char.ja}さんは ${obj.ja}を ${act.stem}たいです。`;
+                        romaji = `${char.romaji}-san wa ${obj.romaji} o ${act.r_stem}tai desu.`;
+                        zh = `${char.zh}想要${act.zh}${obj.zh}。`;
+                        break;
+                    case "13":
+                        ja = `${char.ja}さんは ${obj.ja}が 好きです。`;
+                        romaji = `${char.romaji}-san wa ${obj.romaji} ga suki desu.`;
+                        zh = `${char.zh}喜歡${obj.zh}。`;
+                        break;
+                    case "14":
+                        ja = `今日は ${wea.ja}ですから、${char.ja}さんは ${mood.ja}です。`;
+                        romaji = `Kyou wa ${wea.romaji} desukara, ${char.romaji}-san wa ${mood.romaji} desu.`;
+                        zh = `因為今天是${wea.zh}，所以${char.zh}覺得${mood.zh}。`;
+                        break;
+                    case "15":
+                        ja = `いっしょに ${loc.ja}で ${obj.ja}を ${act.stem}ませんか。`;
+                        romaji = `Isshoni ${loc.romaji} de ${obj.romaji} o ${act.r_stem}masenka.`;
+                        zh = `要不要一起在${loc.zh}${act.zh}${obj.zh}呢？`;
+                        break;
+                }
+
+                currentJapaneseSentences.push(ja); // 將生成的日文推入陣列供發音使用
+                output += `【${i}】\n假名：${ja}\n羅馬：${romaji}\n中文：${zh}\n------------------------\n`;
+            }
+
+            document.getElementById('outputText').value = output;
+        }
+
+        // Web Speech API 語音朗讀功能
+        function readAloud() {
+            if (!('speechSynthesis' in window)) {
+                alert("您的瀏覽器不支援語音合成 (Web Speech API)，建議使用最新版 Chrome 或 Safari。");
+                return;
+            }
+            if (currentJapaneseSentences.length === 0) {
+                alert("請先點擊「生成 10 句」按鈕！");
+                return;
+            }
+
+            // 停止當前可能正在播放的語音
+            window.speechSynthesis.cancel();
+            
+            // 取得使用者設定的語速
+            const rate = parseFloat(document.getElementById('speechRate').value);
+
+            // 將每句話加入播放佇列，以確保中斷與節奏正常
+            currentJapaneseSentences.forEach((sentence) => {
+                const utterance = new SpeechSynthesisUtterance(sentence);
+                utterance.lang = 'ja-JP'; // 指定日語發音
+                utterance.rate = rate;    // 設定語速
+                window.speechSynthesis.speak(utterance);
+            });
+        }
+
+        // 停止朗讀功能
+        function stopSpeech() {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+            }
+        }
+
+        function copyText() {
+            const textArea = document.getElementById('outputText');
+            if(textArea.value.trim() === "") {
+                alert("請先點擊生成按鈕！");
+                return;
+            }
+            textArea.select();
+            document.execCommand('copy');
+            alert("已成功複製 10 組造句！");
+        }
+        
+        generateSentences();
+    </script>
+</body>
+</html>
